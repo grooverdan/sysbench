@@ -54,6 +54,7 @@
 typedef enum {
   LOG_MSG_TYPE_MIN,           /* used for internal purposes */
   LOG_MSG_TYPE_TEXT,          /* arbitrary text messages */
+  LOG_MSG_TYPE_STRUCTURE,     /* structured message for structured output */
   LOG_MSG_TYPE_OPER,          /* operation start/stop messages */
   LOG_MSG_TYPE_MAX            /* used for internal purposes */
 } log_msg_type_t;
@@ -77,6 +78,14 @@ typedef struct {
   char               *text;
   unsigned int       flags;
 } log_msg_text_t;
+
+/* Structed message definition */
+
+typedef struct {
+  const char         *tag;
+  const char         *value;
+  log_msg_priority_t priority;
+} log_msg_struct_t;
 
 /* Operation start/stop message definition */
 
@@ -102,14 +111,18 @@ typedef struct {
 typedef int log_op_register(void);          /* register handler options */
 typedef int log_op_init(void);              /* initialize log handler */
 typedef int log_op_process(log_msg_t *msg); /* process message */
+typedef void log_op_begin_section(const char *section); /* begin section */
+typedef void log_op_end_section(const char *section);   /* end section */
 typedef int log_op_done(void);              /* uninitialize log handler */
 
 /* Log handler operations structure */
 
 typedef struct {
-  log_op_init     *init;
-  log_op_process  *process;
-  log_op_done     *done;
+  log_op_init          *init;
+  log_op_process       *process;
+  log_op_begin_section *begin_section;
+  log_op_end_section   *end_section;
+  log_op_done          *done;
 } log_handler_ops_t;
 
 /* Log handler definition */
@@ -139,6 +152,10 @@ int log_init(void);
 
 int log_add_handler(log_msg_type_t type, log_handler_t *handler);
 
+/* Remove handler for a specified type of messages */
+
+int log_delete_handler(log_msg_type_t type, log_handler_t *handler);
+
 /* Main function to dispatch log messages */
 
 void log_msg(log_msg_t *);
@@ -147,6 +164,15 @@ void log_msg(log_msg_t *);
 
 void log_text(log_msg_priority_t priority, const char *fmt, ...)
   SB_ATTRIBUTE_FORMAT(printf, 2, 3);
+
+/* for outputing structured messages. Returns the contents of
+ * snprint(buffer, MAX_STRUCTURE_LENGTH, fmt, ...) in buffer
+ * as this will be used in the log_text */
+#define MAX_STRUCTURE_LENGTH  40
+
+void log_structure(log_msg_priority_t priority, const char *tag,
+  char buffer[MAX_STRUCTURE_LENGTH], const char *fmt, ...)
+  SB_ATTRIBUTE_FORMAT(printf, 4, 5);
 
 /*
   variant of log_text() which prepends log lines with a elapsed time of the
@@ -161,6 +187,16 @@ void log_timestamp(log_msg_priority_t priority, const sb_timer_t *timer,
 
 void log_errno(log_msg_priority_t priority, const char *fmt, ...)
   SB_ATTRIBUTE_FORMAT(printf, 2, 3);
+
+/* Begin/end section for structured output */
+
+void log_begin_section(const char *section);
+
+void log_end_section(const char *section);
+
+/* Output the configuration of the test into output as structured */
+
+void log_config(sb_arg_t args[]);
 
 /* Uninitialize logger */
 

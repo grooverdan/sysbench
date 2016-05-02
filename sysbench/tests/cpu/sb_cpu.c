@@ -83,6 +83,10 @@ int register_test_cpu(sb_list_t * tests)
 int cpu_init(void)
 {
   int prime_option= sb_get_value_int("cpu-max-prime");
+
+  log_begin_section("cpu");
+  log_config(cpu_args);
+
   if (prime_option <= 0)
   {
     log_text(LOG_FATAL, "Invalid value of cpu-max-prime: %d.", prime_option);
@@ -160,5 +164,6 @@ int cpu_done(void)
 {
   pthread_mutex_destroy(&request_mutex);
 
+  log_end_section("cpu");
   return 0;
 }

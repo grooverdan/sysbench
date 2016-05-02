@@ -255,6 +255,9 @@ db_driver_t *db_init(const char *name)
   if (sb_percentile_init(&local_percentile, 100000, 1.0, 1e13))
     return NULL;
 
+  log_begin_section("database");
+  log_config(db_args);
+
   return drv;
 }
 
@@ -582,6 +585,8 @@ int db_done(db_driver_t *drv)
 
   sb_percentile_done(&local_percentile);
 
+  log_end_section("database");
+
   return drv->ops.done();
 }
 
@@ -830,6 +835,8 @@ void db_print_stats(sb_stat_t type)
   unsigned long transactions;
   unsigned long errors;
   unsigned long reconnects;
+  char value[MAX_STRUCTURE_LENGTH];
+  char rate[MAX_STRUCTURE_LENGTH];
 
   /* Summarize per-thread counters */
   read_ops = write_ops = other_ops = transactions = errors = reconnects = 0;
@@ -847,28 +854,45 @@ void db_print_stats(sb_stat_t type)
 
   if (type == SB_STAT_INTERMEDIATE)
   {
-    seconds = NS2SEC(sb_timer_split(&sb_globals.exec_timer));
+    char threads[MAX_STRUCTURE_LENGTH];
+    char tps[MAX_STRUCTURE_LENGTH];
+    char reads[MAX_STRUCTURE_LENGTH];
+    char writes[MAX_STRUCTURE_LENGTH];
+    char response[MAX_STRUCTURE_LENGTH];
+    char percentile[MAX_STRUCTURE_LENGTH];
+    char err[MAX_STRUCTURE_LENGTH];
+    char recon[MAX_STRUCTURE_LENGTH];
 
-    log_timestamp(LOG_NOTICE, &sb_globals.exec_timer,
-                  "threads: %d, tps: %4.2f, reads: %4.2f, writes: %4.2f, "
-                  "response time: %4.2fms (%u%%), errors: %4.2f, "
-                  "reconnects: %5.2f",
-                  sb_globals.num_running,
-                  (transactions - last_transactions) / seconds,
-                  (read_ops - last_read_ops) / seconds,
-                  (write_ops - last_write_ops) / seconds,
+    seconds = NS2SEC(sb_timer_split(&sb_globals.exec_timer));
+    log_begin_section("stats_intermediate");
+
+    log_structure(LOG_NOTICE, "threads", threads, "%d",  sb_globals.num_running);
+    log_structure(LOG_NOTICE, "tps", tps, "%4.2f", (transactions - last_transactions) / seconds);
+    log_structure(LOG_NOTICE, "reads", reads, "%4.2f", (read_ops - last_read_ops) / seconds);
+    log_structure(LOG_NOTICE, "writes", writes, "%4.2f", (write_ops - last_write_ops) / seconds);
+    log_structure(LOG_NOTICE, "response", response, "%4.2f",
                   NS2MS(sb_percentile_calculate(&local_percentile,
-                                                sb_globals.percentile_rank)),
-                  sb_globals.percentile_rank,
-                  (errors - last_errors) / seconds,
-                  (reconnects - last_reconnects) / seconds);
+                                                sb_globals.percentile_rank)));
+    log_structure(LOG_NOTICE, "precentile", percentile, "%u", sb_globals.percentile_rank);
+    log_structure(LOG_NOTICE, "errors", err, "%4.2f", (errors - last_errors) / seconds);
+    log_structure(LOG_NOTICE, "reconnects", recon, "%5.2f", (reconnects - last_reconnects) / seconds);
+    log_timestamp(LOG_NOTICE, &sb_globals.exec_timer,
+                  "threads: %s, tps: %s, reads: %s, writes: %s, "
+                  "response time: %sms (%s%%), errors: %s, "
+                  "reconnects: %s",
+                  threads, tps, reads, writes, response, percentile, err, recon);
+
     if (sb_globals.tx_rate > 0)
     {
+      char len[MAX_STRUCTURE_LENGTH];
+      char concurrency[MAX_STRUCTURE_LENGTH];
+
+      log_structure(LOG_NOTICE, "queue_length", len, "%d", sb_globals.event_queue_length);
+      log_structure(LOG_NOTICE, "concurrency", concurrency, "%d", sb_globals.concurrency);
       pthread_mutex_lock(&event_queue_mutex);
 
       log_timestamp(LOG_NOTICE, &sb_globals.exec_timer,
-                    "queue length: %d, concurrency: %d",
-                    sb_globals.event_queue_length, sb_globals.concurrency);
+                    "queue length: %s, concurrency: %s", len, concurrency);
 
       pthread_mutex_unlock(&event_queue_mutex);
     }
@@ -883,6 +907,8 @@ void db_print_stats(sb_stat_t type)
 
     sb_percentile_reset(&local_percentile);
 
+    log_end_section("stats_intermediate");
+
     return;
   }
   else if (type != SB_STAT_CUMULATIVE)
@@ -890,27 +916,44 @@ void db_print_stats(sb_stat_t type)
 
   seconds = NS2SEC(sb_timer_split(&sb_globals.cumulative_timer1));
 
+  log_begin_section("stats_cumulative");
+
+  log_begin_section("oltp_test_statistics");
   log_text(LOG_NOTICE, "OLTP test statistics:");
+  log_begin_section("queries");
   log_text(LOG_NOTICE, "    queries performed:");
-  log_text(LOG_NOTICE, "        read:                            %lu",
-           read_ops);
-  log_text(LOG_NOTICE, "        write:                           %lu",
-           write_ops);
-  log_text(LOG_NOTICE, "        other:                           %lu",
-           other_ops);
-  log_text(LOG_NOTICE, "        total:                           %lu",
-           read_ops + write_ops + other_ops);
-  log_text(LOG_NOTICE, "    transactions:                        %-6lu"
-           " (%.2f per sec.)", transactions, transactions / seconds);
-  log_text(LOG_NOTICE, "    read/write requests:                 %-6lu"
-           " (%.2f per sec.)", read_ops + write_ops,
-           (read_ops + write_ops) / seconds);  
-  log_text(LOG_NOTICE, "    other operations:                    %-6lu"
-           " (%.2f per sec.)", other_ops, other_ops / seconds);
-  log_text(LOG_NOTICE, "    ignored errors:                      %-6lu"
-           " (%.2f per sec.)", errors, errors / seconds);
-  log_text(LOG_NOTICE, "    reconnects:                          %-6lu"
-           " (%.2f per sec.)", reconnects, reconnects / seconds);
+  log_structure(LOG_NOTICE, "read", value, "%lu", read_ops);
+  log_text(LOG_NOTICE, "        read:                            %s", value);
+  log_structure(LOG_NOTICE, "write", value, "%lu", write_ops);
+  log_text(LOG_NOTICE, "        write:                           %s", value);
+  log_structure(LOG_NOTICE, "other", value, "%lu", other_ops);
+  log_text(LOG_NOTICE, "        other:                           %s", value);
+  log_structure(LOG_NOTICE, "total", value, "%lu", read_ops + write_ops + other_ops);
+  log_text(LOG_NOTICE, "        total:                           %s", value);
+  log_end_section("queries");
+
+  log_structure(LOG_NOTICE, "transactions", value, "%lu", transactions);
+  log_structure(LOG_NOTICE, "transaction_rate", rate, "%.2f", transactions / seconds);
+  log_text(LOG_NOTICE, "    transactions:                        %-6s"
+           " (%s per sec.)", value, rate);
+  log_structure(LOG_NOTICE, "read_write_requests", value, "%lu",  read_ops + write_ops);
+  log_structure(LOG_NOTICE, "read_write_requests_rate", rate, "%.2f",  (read_ops + write_ops) / seconds);
+  log_text(LOG_NOTICE, "    read/write requests:                 %-6s"
+           " (%s per sec.)", value, rate);
+  log_structure(LOG_NOTICE, "other_requests", value, "%lu",  other_ops);
+  log_structure(LOG_NOTICE, "other_requests_rate", rate, "%.2f",  other_ops / seconds);
+  log_text(LOG_NOTICE, "    other operations:                    %-6s"
+           " (%s per sec.)", value, rate);
+  log_structure(LOG_NOTICE, "errors", value, "%lu",  errors);
+  log_structure(LOG_NOTICE, "errors_rate", rate, "%.2f",  errors / seconds);
+  log_text(LOG_NOTICE, "    ignored errors:                      %-6s"
+           " (%s per sec.)", value, rate);
+  log_structure(LOG_NOTICE, "reconnects", value, "%lu",  errors);
+  log_structure(LOG_NOTICE, "reconnects_rate", rate, "%.2f",  errors / seconds);
+  log_text(LOG_NOTICE, "    reconnects:                          %-6s"
+           " (%s per sec.)", value, rate);
+
+  log_end_section("oltp_test_statistics");
 
   if (db_globals.debug)
   {
@@ -924,27 +967,32 @@ void db_print_stats(sb_stat_t type)
     }
 
     log_text(LOG_DEBUG, "");
+    log_begin_section("query_execution_statistics");
     log_text(LOG_DEBUG, "Query execution statistics:");
-    log_text(LOG_DEBUG, "    min:                                %.4fs",
-             NS2SEC(get_min_time(&exec_timer)));
-    log_text(LOG_DEBUG, "    avg:                                %.4fs",
-             NS2SEC(get_avg_time(&exec_timer)));
-    log_text(LOG_DEBUG, "    max:                                %.4fs",
-             NS2SEC(get_max_time(&exec_timer)));
-    log_text(LOG_DEBUG, "  total:                                %.4fs",
-             NS2SEC(get_sum_time(&exec_timer)));
+    log_structure(LOG_DEBUG, "min", value, "%.4f", NS2SEC(get_min_time(&exec_timer)));
+    log_text(LOG_DEBUG, "    min:                                %ss", value);
+    log_structure(LOG_DEBUG, "avg", value, "%.4f", NS2SEC(get_avg_time(&exec_timer)));
+    log_text(LOG_DEBUG, "    avg:                                %ss", value);
+    log_structure(LOG_DEBUG, "max", value, "%.4f", NS2SEC(get_max_time(&exec_timer)));
+    log_text(LOG_DEBUG, "    max:                                %ss", value);
+    log_structure(LOG_DEBUG, "total", value, "%.4f", NS2SEC(get_sum_time(&exec_timer)));
+    log_text(LOG_DEBUG, "  total:                                %ss", value);
+    log_end_section("query_execution_statistics");
 
+    log_begin_section("results_fetching_statistics");
     log_text(LOG_DEBUG, "Results fetching statistics:");
-    log_text(LOG_DEBUG, "    min:                                %.4fs",
-             NS2SEC(get_min_time(&fetch_timer)));
-    log_text(LOG_DEBUG, "    avg:                                %.4fs",
-             NS2SEC(get_avg_time(&fetch_timer)));
-    log_text(LOG_DEBUG, "    max:                                %.4fs",
-             NS2SEC(get_max_time(&fetch_timer)));
-    log_text(LOG_DEBUG, "  total:                                %.4fs",
-             NS2SEC(get_sum_time(&fetch_timer)));
+    log_structure(LOG_DEBUG, "min", value, "%.4f", NS2SEC(get_min_time(&fetch_timer)));
+    log_text(LOG_DEBUG, "    min:                                %ss", value);
+    log_structure(LOG_DEBUG, "avg", value, "%.4f", NS2SEC(get_avg_time(&fetch_timer)));
+    log_text(LOG_DEBUG, "    avg:                                %ss", value);
+    log_structure(LOG_DEBUG, "max", value, "%.4f", NS2SEC(get_max_time(&fetch_timer)));
+    log_text(LOG_DEBUG, "    max:                                %ss", value);
+    log_structure(LOG_DEBUG, "total", value, "%.4f", NS2SEC(get_sum_time(&fetch_timer)));
+    log_text(LOG_DEBUG, "  total:                                %ss", value);
+    log_end_section("results_fetching_statistics");
   }
 
+  log_end_section("stats_cumulative");
   db_reset_stats();
 }
 

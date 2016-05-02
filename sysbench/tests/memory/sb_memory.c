@@ -56,6 +56,7 @@ static sb_arg_t memory_args[] =
 
 /* Memory test operations */
 static int memory_init(void);
+static int memory_done(void);
 static void memory_print_mode(void);
 static sb_request_t memory_get_request(int);
 static int memory_execute_request(sb_request_t *, int);
@@ -75,7 +76,7 @@ static sb_test_t memory_test =
     memory_print_stats,
     NULL,
     NULL,
-    NULL
+    memory_done
   },
   {
     NULL,
@@ -214,9 +215,18 @@ int memory_init(void)
     }
   }
   
+  log_begin_section("memory");
+  log_config(memory_args);
+
   return 0;
 }
 
+
+int memory_done(void)
+{
+  log_end_section("memory");
+  return 0;
+}
 
 sb_request_t memory_get_request(int thread_id)
 {
@@ -362,16 +372,23 @@ void memory_print_stats(sb_stat_t type)
 {
   double       seconds;
   const double megabyte = 1024.0 * 1024.0;
+  char ops[MAX_STRUCTURE_LENGTH];
+  char rate[MAX_STRUCTURE_LENGTH];
+  char volume[MAX_STRUCTURE_LENGTH];
 
   switch (type) {
   case SB_STAT_INTERMEDIATE:
     SB_THREAD_MUTEX_LOCK();
+    log_begin_section("stats_intermediate");
     seconds = NS2SEC(sb_timer_split(&sb_globals.exec_timer));
 
+    log_structure(LOG_NOTICE, "rate", rate, "%4.2f",
+                 (double)(total_bytes - last_bytes) / megabyte / seconds);
     log_timestamp(LOG_NOTICE, &sb_globals.exec_timer,
-                  "%4.2f MiB/sec,",
-                  (double)(total_bytes - last_bytes) / megabyte / seconds);
+                  "%s MiB/sec,", rate);
     last_bytes = total_bytes;
+
+    log_end_section("stats_intermediate");
     SB_THREAD_MUTEX_UNLOCK();
 
     break;
@@ -379,12 +396,16 @@ void memory_print_stats(sb_stat_t type)
   case SB_STAT_CUMULATIVE:
     seconds = NS2SEC(sb_timer_split(&sb_globals.cumulative_timer1));
 
-    log_text(LOG_NOTICE, "Operations performed: %d (%8.2f ops/sec)\n",
-             total_ops, total_ops / seconds);
+    log_begin_section("stats_cumulative");
+    log_structure(LOG_NOTICE, "ops", ops, "%d", total_ops);
+    log_structure(LOG_NOTICE, "rate", rate, "%8.2f", total_ops / seconds);
+    log_text(LOG_NOTICE, "Operations performed: %s (%s ops/sec)\n", ops, rate);
     if (memory_oper != SB_MEM_OP_NONE)
-      log_text(LOG_NOTICE, "%4.2f MiB transferred (%4.2f MiB/sec)\n",
-               total_bytes / megabyte,
-               total_bytes / megabyte / seconds);
+    {
+      log_structure(LOG_NOTICE, "volume", volume, "%4.2f", total_bytes / megabyte);
+      log_structure(LOG_NOTICE, "rate", rate, "%4.2f", total_bytes / megabyte / seconds);
+      log_text(LOG_NOTICE, "%s MiB transferred (%s MiB/sec)\n", volume, rate);
+    }
     total_ops = 0;
     total_bytes = 0;
     /*
@@ -394,6 +415,7 @@ void memory_print_stats(sb_stat_t type)
     if (sb_timer_initialized(&sb_globals.exec_timer))
       sb_timer_split(&sb_globals.exec_timer);
 
+    log_end_section("stats_cumulative");
     break;
   }
 }
@@ -415,7 +437,7 @@ void * hugetlb_alloc(size_t size)
   if (shmid < 0)
   {
       log_errno(LOG_FATAL,
-                "Failed to allocate %d bytes from HugeTLB memory.", size);
+                "Failed to allocate %zu bytes from HugeTLB memory.", size);
 
       return NULL;
   }

@@ -114,6 +114,9 @@ int mutex_init(void)
   for (i = 0; i < mutex_num; i++)
     pthread_mutex_init(&thread_locks[i].mutex, NULL);
   
+  log_begin_section("mutex");
+  log_config(mutex_args);
+
   return 0;
 }
 
@@ -126,6 +129,7 @@ int mutex_done(void)
     pthread_mutex_destroy(&thread_locks[i].mutex);
   free(thread_locks);
   
+  log_end_section("mutex");
   return 0;
 }
 

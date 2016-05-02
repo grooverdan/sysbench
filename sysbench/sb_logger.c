@@ -75,6 +75,18 @@ static pthread_mutex_t timers_mutex;
 static int text_handler_init(void);
 static int text_handler_process(log_msg_t *msg);
 
+static int xml_handler_init(void);
+static int xml_handler_process(log_msg_t *msg);
+static void xml_begin_section(const char *section);
+static void xml_end_section(const char *section);
+static int xml_handler_done(void);
+
+static int json_handler_init(void);
+static int json_handler_process(log_msg_t *msg);
+static void json_begin_section(const char *section);
+static void json_end_section(const char *section);
+static int json_handler_done(void);
+
 static int oper_handler_init(void);
 static int oper_handler_process(log_msg_t *msg);
 static int oper_handler_done(void);
@@ -96,8 +108,52 @@ static log_handler_t text_handler = {
     &text_handler_init,
     &text_handler_process,
     NULL,
+    NULL,
+    NULL,
   },
   text_handler_args,
+  {0,0}
+};
+
+/* XML Handler */
+
+static sb_arg_t xml_handler_args[] =
+{
+  {"xml-file", "Output filename", SB_ARG_TYPE_STRING,
+   ""},
+  {NULL, NULL, SB_ARG_TYPE_NULL, NULL}
+};
+
+static log_handler_t xml_handler = {
+  {
+    &xml_handler_init,
+    &xml_handler_process,
+    &xml_begin_section,
+    &xml_end_section,
+    &xml_handler_done,
+  },
+  xml_handler_args,
+  {0,0}
+};
+
+/* JSON Handler */
+
+static sb_arg_t json_handler_args[] =
+{
+  {"json-file", "Output filename", SB_ARG_TYPE_STRING,
+   ""},
+  {NULL, NULL, SB_ARG_TYPE_NULL, NULL}
+};
+
+static log_handler_t json_handler = {
+  {
+    &json_handler_init,
+    &json_handler_process,
+    &json_begin_section,
+    &json_end_section,
+    &json_handler_done,
+  },
+  json_handler_args,
   {0,0}
 };
 
@@ -113,9 +169,11 @@ static sb_arg_t oper_handler_args[] =
 
 static log_handler_t oper_handler = {
   {
-    oper_handler_init,
+    &oper_handler_init,
     &oper_handler_process,
-    oper_handler_done,
+    NULL,
+    NULL,
+    &oper_handler_done,
   },
   oper_handler_args,
   {0,0}
@@ -133,6 +191,8 @@ int log_register(void)
     SB_LIST_INIT(handlers + i);
 
   log_add_handler(LOG_MSG_TYPE_TEXT, &text_handler);
+  log_add_handler(LOG_MSG_TYPE_STRUCTURE, &xml_handler);
+  log_add_handler(LOG_MSG_TYPE_STRUCTURE, &json_handler);
   log_add_handler(LOG_MSG_TYPE_OPER, &oper_handler);
   
   return 0;
@@ -227,6 +287,26 @@ int log_add_handler(log_msg_type_t type, log_handler_t *handler)
   return 0;
 }
 
+/* Remove hander */
+
+int log_delete_handler(log_msg_type_t type, log_handler_t *handler)
+{
+  sb_list_item_t *next;
+  sb_list_item_t *cur;
+  log_handler_t  *val;
+ 
+  if (type <= LOG_MSG_TYPE_MIN || type >= LOG_MSG_TYPE_MAX)
+    return 1;
+
+  SB_LIST_FOR_EACH_SAFE(cur, next, handlers + type)
+  {
+    val = SB_LIST_ENTRY(cur, log_handler_t, listitem);
+    if (val == handler)
+      SB_LIST_DELETE(cur);
+  }
+
+  return 0;
+}
 
 /* Main function to dispatch log messages */
 
@@ -244,6 +324,116 @@ void log_msg(log_msg_t *msg)
   }
 }
 
+
+void log_begin_section(const char *section)
+{
+  sb_list_item_t  *pos;
+  log_handler_t   *handler;
+
+  SB_LIST_FOR_EACH(pos, handlers + LOG_MSG_TYPE_STRUCTURE)
+  {
+    handler = SB_LIST_ENTRY(pos, log_handler_t, listitem);
+    if (handler->ops.begin_section != NULL && handler)
+      handler->ops.begin_section(section);
+  }
+}
+
+
+void log_end_section(const char *section)
+{
+  sb_list_item_t  *pos;
+  log_handler_t   *handler;
+
+  SB_LIST_FOR_EACH(pos, handlers + LOG_MSG_TYPE_STRUCTURE)
+  {
+    handler = SB_LIST_ENTRY(pos, log_handler_t, listitem);
+    if (handler->ops.end_section != NULL)
+      handler->ops.end_section(section);
+  }
+}
+
+void log_config(sb_arg_t *arg)
+{
+  char      s1[MAX_STRUCTURE_LENGTH];
+  sb_list_t *list;
+  sb_list_item_t *next;
+  sb_list_item_t *cur;
+  value_t        *val;
+
+  log_begin_section("configuration");
+
+  while (arg->name)
+  {
+    switch (arg->type) {
+      case SB_ARG_TYPE_FLAG:
+        log_structure(LOG_NOTICE, arg->name, s1, "%d",
+                      sb_get_value_flag(arg->name));
+        break;
+      case SB_ARG_TYPE_LIST:
+        log_begin_section(arg->name);
+        list = sb_get_value_list(arg->name);
+        SB_LIST_FOR_EACH_SAFE(cur, next, list)
+          {
+          val = SB_LIST_ENTRY(cur, value_t, listitem);
+          if (val->data != NULL)
+            log_structure(LOG_NOTICE, val->data, s1, "%s", val->data);
+        }
+        log_end_section(arg->name);
+        break;
+      case SB_ARG_TYPE_SIZE:
+        log_structure(LOG_NOTICE, arg->name, s1, "%llu",
+                      sb_get_value_size(arg->name));
+        break;
+      case SB_ARG_TYPE_INT:
+        log_structure(LOG_NOTICE, arg->name, s1, "%d",
+                      sb_get_value_int(arg->name));
+        break;
+      case SB_ARG_TYPE_FLOAT:
+        log_structure(LOG_NOTICE, arg->name, s1, "%f",
+                      sb_get_value_float(arg->name));
+        break;
+      case SB_ARG_TYPE_STRING:
+      case SB_ARG_TYPE_FILE:
+      case SB_ARG_TYPE_NULL:
+        log_structure(LOG_NOTICE, arg->name, s1, "%s",
+                      sb_get_value_string(arg->name));
+        break;
+    }
+    ++arg;
+  }
+  log_end_section("configuration");
+}
+
+void log_structure(log_msg_priority_t priority, const char *tag,
+  char buffer[MAX_STRUCTURE_LENGTH], const char *fmt, ...)
+{
+  va_list          ap;
+  int		   n;
+  sb_list_item_t   *pos;
+  log_handler_t    *handler;
+  log_msg_t        msg;
+  log_msg_struct_t struct_msg;
+
+  va_start(ap, fmt);
+  n = snprintf(buffer, MAX_STRUCTURE_LENGTH, fmt, ap);
+  va_end(ap);
+  if (n >= MAX_STRUCTURE_LENGTH)
+    buffer[MAX_STRUCTURE_LENGTH - 1] = '\0';
+
+  struct_msg.tag = tag;
+  struct_msg.value = buffer;
+  struct_msg.priority = priority;
+
+  msg.type = LOG_MSG_TYPE_STRUCTURE;
+  msg.data = &struct_msg;
+
+  SB_LIST_FOR_EACH(pos, handlers + LOG_MSG_TYPE_STRUCTURE)
+  {
+    handler = SB_LIST_ENTRY(pos, log_handler_t, listitem);
+    if (handler->ops.process != NULL)
+      handler->ops.process(&msg);
+  }
+}
 
 /* printf-like wrapper to log text messages */
 
@@ -307,7 +497,12 @@ void log_timestamp(log_msg_priority_t priority, const sb_timer_t *timer,
   maxlen = TEXT_BUFFER_SIZE;
   clen = 0;
 
-  n = snprintf(buf, maxlen, "[%4.0fs] ", NS2SEC(timer->elapsed));
+  log_structure(priority, "time", buf + 1, "%4.0f%n", NS2SEC(timer->elapsed), &n);
+  *buf = '[';
+  buf[1 + n] = 's';
+  buf[2 + n] = ']';
+  buf[3 + n] = ' ';
+  n += 4;
   clen += n;
   maxlen -= n;
 
@@ -421,13 +616,170 @@ int text_handler_init(void)
 }
 
 
-/* Print text message to the log */
+/* indentation for json/xml format */
+static const int indent_increment = 4;
 
+/* xml handler */
+static int xml_indentation = 0;
+
+static FILE *xml_out = NULL;
+
+static int xml_do_close;
+
+int xml_handler_init(void)
+{
+  char *fn = sb_get_value_string("xml-file");
+
+  if (fn == NULL)
+  {
+    log_delete_handler(LOG_MSG_TYPE_STRUCTURE, &xml_handler);
+    return 0; /* not selecting this handler isn't fatal */
+  }
+  if (!strcasecmp(fn, "-"))
+  {
+    xml_out = stdout;
+    xml_do_close = 0;
+  }
+  else
+  {
+    xml_out = fopen(fn, "w");
+    xml_do_close = 1;
+  }
+
+  if (xml_out == NULL)
+  {
+    log_errno(LOG_FATAL, "Failed to open xml file: %s", fn);
+    log_delete_handler(LOG_MSG_TYPE_STRUCTURE, &xml_handler);
+    return 1;
+  }
+  fputs("<?xml version=\"1.0\"?>\n", xml_out);
+  xml_begin_section("sysbench");
+  return 0;
+}
+
+int xml_handler_done(void)
+{
+  print_global_stats();
+
+  xml_end_section("sysbench");
+  if (xml_do_close && fclose(xml_out))
+  {
+    log_errno(LOG_FATAL, "Failed to close xml file");
+    return 1;
+  }
+  return 0;
+}
+
+int xml_handler_process(log_msg_t *msg)
+{
+  log_msg_struct_t *struct_msg = (log_msg_struct_t *)msg->data;
+  fprintf(xml_out, "%*s<%s>%s</%s>\n", xml_indentation, "", struct_msg->tag,
+          struct_msg->value, struct_msg->tag);
+  return 0;
+}
+
+void xml_begin_section(const char *section)
+{
+  fprintf(xml_out, "%*s<%s>\n", xml_indentation, "", section);
+  xml_indentation += indent_increment;
+}
+
+void xml_end_section(const char *section)
+{
+  xml_indentation -= indent_increment;
+  fprintf(xml_out, "%*s</%s>\n", xml_indentation, "", section);
+}
+
+/* JSON hander */
+static int json_indentation = 0;
+
+static int json_first_element = 1;
+
+static FILE *json_out = NULL;
+
+static int json_do_close;
+
+int json_handler_init(void)
+{
+  char *fn = sb_get_value_string("json-file");
+
+  if (fn == NULL)
+  {
+    log_delete_handler(LOG_MSG_TYPE_STRUCTURE, &json_handler);
+    return 0; /* not selecting this handler isn't fatal */
+  }
+  if (!strcasecmp(fn, "-"))
+  {
+    json_out = stdout;
+    json_do_close = 0;
+  }
+  else
+  {
+    json_out = fopen(fn, "w");
+    json_do_close = 1;
+  }
+
+  if (json_out == NULL)
+  {
+    log_errno(LOG_FATAL, "Failed to open json file: %s", fn);
+    log_delete_handler(LOG_MSG_TYPE_STRUCTURE, &json_handler);
+    return 1;
+  }
+
+  fputs( "sysbench : {", json_out);
+  json_indentation += indent_increment;
+  json_first_element = 1;
+  return 0;
+}
+
+int json_handler_done(void)
+{
+  print_global_stats();
+
+  fputc('\n', json_out); 
+  json_end_section(NULL);
+  if (json_do_close && fclose(json_out))
+  {
+    log_errno(LOG_FATAL, "Failed to close json file");
+    return 1;
+  }
+  return 0;
+}
+
+int json_handler_process(log_msg_t *msg)
+{
+  int ret;
+  log_msg_struct_t *struct_msg = (log_msg_struct_t *)msg->data;
+
+  ret = fprintf(json_out, "%s\n%*s\"%s\": \"%s\"", 
+                json_first_element ? "" : ",",
+                json_indentation, "",
+                struct_msg->tag, struct_msg->value);
+  json_first_element = 0;
+  return ret < 0;
+}
+
+void json_begin_section(const char *section)
+{
+  fprintf(json_out, "\n%*s\"%s\" : {", json_indentation, "", section);
+  json_indentation += indent_increment;
+  json_first_element = 1;
+}
+
+
+void json_end_section(const char *section)
+{
+  json_indentation -= indent_increment;
+  fprintf(json_out, "\n%*s}", json_indentation, "");
+}
+
+/* Print text message to the log */
 
 int text_handler_process(log_msg_t *msg)
 {
   char *prefix;
   log_msg_text_t *text_msg = (log_msg_text_t *)msg->data;
+  FILE *out = stdout;
 
   if (text_msg->priority > sb_globals.verbosity)
     return 0;
@@ -456,22 +808,26 @@ int text_handler_process(log_msg_t *msg)
   switch (text_msg->priority) {
     case LOG_FATAL:
       prefix = "FATAL: ";
+      out = stderr;
       break;
     case LOG_ALERT:
       prefix = "ALERT: ";
+      out = stderr;
       break;
     case LOG_WARNING:
       prefix = "WARNING: ";
+      out = stderr;
       break;
     case LOG_DEBUG:
       prefix = "DEBUG: ";
+      out = stderr;
       break;
     default:
       prefix = "";
       break;
   }
   
-  printf("%s%s", prefix, text_msg->text);
+  fprintf(out, "%s%s", prefix, text_msg->text);
   
   return 0;
 }
@@ -570,6 +926,9 @@ int print_global_stats(void)
   double       percentile_val;
   unsigned long long total_time_ns;
 
+  char         s1[MAX_STRUCTURE_LENGTH];
+  char         s2[MAX_STRUCTURE_LENGTH];
+
   sb_timer_init(&t);
   nthreads = sb_globals.num_threads;
 
@@ -623,29 +982,34 @@ int print_global_stats(void)
     t = merge_timers(&t, &timers_copy[i]);
 
 /* Print total statistics */
+  log_begin_section("general_statistics");
   log_text(LOG_NOTICE, "");
   log_text(LOG_NOTICE, "General statistics:");
-  log_text(LOG_NOTICE, "    total time:                          %.4fs",
-           NS2SEC(total_time_ns));
-  log_text(LOG_NOTICE, "    total number of events:              %lld",
-           t.events);
-  log_text(LOG_NOTICE, "    total time taken by event execution: %.4fs",
-           NS2SEC(get_sum_time(&t)));
+  log_structure(LOG_NOTICE, "total_time", s1, "%.4f", NS2SEC(total_time_ns));
+  log_text(LOG_NOTICE, "    total time:                          %ss", s1);
+  log_structure(LOG_NOTICE, "total_events", s1, "%lld", t.events);
+  log_text(LOG_NOTICE, "    total number of events:              %s", s1);
+  log_structure(LOG_NOTICE, "total_time_event_execution", s1, "%.4f",
+                NS2SEC(get_sum_time(&timers_copy[i])));
+  log_text(LOG_NOTICE, "    total time taken by event execution: %ss", s1);
 
+  log_begin_section("response_time");
   log_text(LOG_NOTICE, "    response time:");
-  log_text(LOG_NOTICE, "         min:                            %10.2fms",
-           NS2MS(get_min_time(&t)));
-  log_text(LOG_NOTICE, "         avg:                            %10.2fms",
-           NS2MS(get_avg_time(&t)));
-  log_text(LOG_NOTICE, "         max:                            %10.2fms",
-           NS2MS(get_max_time(&t)));
+  log_structure(LOG_NOTICE, "min", s1, "%10.2f", NS2MS(get_min_time(&t)));
+  log_text(LOG_NOTICE, "         min:                            %sms", s1);
+  log_structure(LOG_NOTICE, "avg", s1, "%10.2f", NS2MS(get_avg_time(&t)));
+  log_text(LOG_NOTICE, "         avg:                            %sms", s1);
+  log_structure(LOG_NOTICE, "max", s1, "%10.2f", NS2MS(get_max_time(&t)));
+  log_text(LOG_NOTICE, "         max:                            %sms", s1);
 
   /* Print approx. percentile value for event execution times */
   if (t.events > 0)
   {
-    log_text(LOG_NOTICE, "         approx. %3d percentile:         %10.2fms",
-             sb_globals.percentile_rank, NS2MS(percentile_val));
+    log_structure(LOG_NOTICE, "percentile_rank", s1, "%3d", sb_globals.percentile_rank);
+    log_structure(LOG_NOTICE, "percentile", s2, "%10.2f", NS2MS(percentile_val));
+    log_text(LOG_NOTICE, "         approx. %s percentile:         %sms", s1, s2);
   }
+  log_end_section("response_time");
   log_text(LOG_NOTICE, "");
 
   /*
@@ -669,31 +1033,42 @@ int print_global_stats(void)
   events_stddev = sqrt(events_stddev / nthreads);
   time_stddev = sqrt(time_stddev / nthreads);
   
+  log_begin_section("threads_fairness");
   log_text(LOG_NOTICE, "Threads fairness:");
-  log_text(LOG_NOTICE, "    events (avg/stddev):           %.4f/%3.2f",
-           events_avg, events_stddev);
-  log_text(LOG_NOTICE, "    execution time (avg/stddev):   %.4f/%3.2f",
-           time_avg, time_stddev);
+  log_structure(LOG_NOTICE, "events_avg", s1, "%.4f", events_avg);
+  log_structure(LOG_NOTICE, "events_stddev", s2, "%3.2f", events_stddev);
+  log_text(LOG_NOTICE, "    events (avg/stddev):           %s/%s", s1, s2);
+  log_structure(LOG_NOTICE, "execution_time_avg", s1, "%.4f", time_avg);
+  log_structure(LOG_NOTICE, "execution_time_stddev", s2, "%3.2f", time_stddev);
+  log_text(LOG_NOTICE, "    execution time (avg/stddev):   %s/%s", s1, s2);
   log_text(LOG_NOTICE, "");
+  log_end_section("threads_fairness");
 
   if (sb_globals.debug)
   {
+    log_begin_section("threads");
     log_text(LOG_DEBUG, "Verbose per-thread statistics:\n");
     for(i = 0; i < nthreads; i++)
     {
-      log_text(LOG_DEBUG, "    thread #%3d: min: %.4fs  avg: %.4fs  max: %.4fs  "
-               "events: %lld",i,
-               NS2SEC(get_min_time(&timers_copy[i])),
-               NS2SEC(get_avg_time(&timers_copy[i])),
-               NS2SEC(get_max_time(&timers_copy[i])),
-               timers_copy[i].events);
+      char min[MAX_STRUCTURE_LENGTH];
+      char avg[MAX_STRUCTURE_LENGTH];
+      char max[MAX_STRUCTURE_LENGTH];
+
+      log_structure(LOG_DEBUG, "thread", s1, "%3d", i);
+      log_structure(LOG_DEBUG, "min", min, "%.4f", NS2SEC(get_min_time(&timers_copy[i])));
+      log_structure(LOG_DEBUG, "avg", avg, "%.4f", NS2SEC(get_avg_time(&timers_copy[i])));
+      log_structure(LOG_DEBUG, "max", max, "%.4f", NS2SEC(get_max_time(&timers_copy[i])));
+      log_structure(LOG_DEBUG, "events", s2, "%lld", timers_copy[i].events);
+      log_text(LOG_DEBUG, "    thread #%s: min: %ss  avg: %ss  max: %ss  "
+               "events: %s", s1, min, avg, max, s2);
+      log_structure(LOG_DEBUG, "thread", s1, "%.4f", NS2SEC(get_sum_time(&timers_copy[i])));
       log_text(LOG_DEBUG, "                 "
-               "total time taken by even execution: %.4fs",
-               NS2SEC(get_sum_time(&timers_copy[i]))
-               );
+               "total time taken by event execution: %ss", s1);
     }
     log_text(LOG_NOTICE, "");
+    log_end_section("threads");
   }
+  log_end_section("general_statistics");
 
   return 0;
 }

@@ -340,6 +340,9 @@ int file_init(void)
   init_vars();
   clear_stats();
 
+  log_begin_section("file");
+  log_config(fileio_args);
+
   if (sb_percentile_init(&local_percentile, 100000, 1.0, 1e13))
     return 1;
 
@@ -414,6 +417,8 @@ int file_done(void)
   free(per_thread);
 
   sb_percentile_done(&local_percentile);
+
+  log_end_section("file");
 
   return 0;
 }
@@ -857,6 +862,11 @@ void file_print_stats(sb_stat_t type)
   unsigned long long diff_read;
   unsigned long long diff_written;
   unsigned long long diff_other_ops;
+  char read[MAX_STRUCTURE_LENGTH];
+  char write[MAX_STRUCTURE_LENGTH];
+  char fsync[MAX_STRUCTURE_LENGTH];
+  char s1[MAX_STRUCTURE_LENGTH];
+  char s2[MAX_STRUCTURE_LENGTH];
 
   switch (type) {
   case SB_STAT_INTERMEDIATE:
@@ -875,17 +885,19 @@ void file_print_stats(sb_stat_t type)
 
       SB_THREAD_MUTEX_UNLOCK();
 
+      log_begin_section("stats_intermediate");
+      log_structure(LOG_NOTICE, "reads", read, "%4.2f", diff_read / megabyte / seconds);
+      log_structure(LOG_NOTICE, "writes", write, "%4.2f", diff_written / megabyte / seconds);
+      log_structure(LOG_NOTICE, "fsyncs", fsync, "%4.2f", diff_other_ops / seconds);
+      log_structure(LOG_NOTICE, "latency", s1, "%4.3f", NS2MS(sb_percentile_calculate(&local_percentile,
+                                                  sb_globals.percentile_rank)));
+      log_structure(LOG_NOTICE, "percentile", s2, "%u", sb_globals.percentile_rank);
       log_timestamp(LOG_NOTICE, &sb_globals.exec_timer,
-                    "reads: %4.2f MiB/s writes: %4.2f MiB/s fsyncs: %4.2f/s "
-                    "latency: %4.3f ms (%uth pct.)",
-                    diff_read / megabyte / seconds,
-                    diff_written / megabyte / seconds,
-                    diff_other_ops / seconds,
-                    NS2MS(sb_percentile_calculate(&local_percentile,
-                                                  sb_globals.percentile_rank)),
-                    sb_globals.percentile_rank);
+                    "reads: %s MiB/s writes: %s MiB/s fsyncs: %s/s "
+                    "latency: %s ms (%sth pct.)", read, write, fsync, s1, s2);
 
       sb_percentile_reset(&local_percentile);
+      log_end_section("stats_intermediate");
 
       break;
     }
@@ -893,18 +905,31 @@ void file_print_stats(sb_stat_t type)
   case SB_STAT_CUMULATIVE:
     seconds = NS2SEC(sb_timer_split(&sb_globals.cumulative_timer1));
 
+    log_begin_section("stats_cumulative");
+
+    log_begin_section("file_operations");
+    log_structure(LOG_NOTICE, "reads", read, "%4.2f", read_ops / seconds);
+    log_structure(LOG_NOTICE, "writes", write, "%4.2f", write_ops / seconds);
+    log_structure(LOG_NOTICE, "fsyncs", fsync, "%4.2f", other_ops / seconds);
+    log_end_section("file_operations");
+
+    log_begin_section("throughput");
+    log_structure(LOG_NOTICE, "read", s1, "%4.2f", bytes_read / megabyte / seconds);
+    log_structure(LOG_NOTICE, "written", s2, "%4.2f", bytes_written / megabyte / seconds);
+    log_end_section("throughput");
+
+    log_end_section("stats_cumulative");
+
     log_text(LOG_NOTICE, "\n"
              "File operations:\n"
-             "    reads/s:                      %4.2f\n"
-             "    writes/s:                     %4.2f\n"
-             "    fsyncs/s:                     %4.2f\n"
+             "    reads/s:                      %s\n"
+             "    writes/s:                     %s\n"
+             "    fsyncs/s:                     %s\n"
              "\n"
              "Throughput:\n"
-             "    read, MiB/s:                  %4.2f\n"
-             "    written, MiB/s:               %4.2f",
-             read_ops / seconds, write_ops / seconds, other_ops / seconds,
-             bytes_read / megabyte / seconds,
-             bytes_written / megabyte / seconds);
+             "    read, MiB/s:                  %s\n"
+             "    written, MiB/s:               %s",
+             read, write, fsync, s1, s2);
 
     clear_stats();
 
@@ -1092,9 +1117,19 @@ int create_files(void)
   seconds = NS2SEC(sb_timer_value(&t));
 
   if (written > 0)
-    log_text(LOG_NOTICE, "%llu bytes written in %.2f seconds (%.2f MiB/sec).",
-             written, seconds,
-             (double) (written / megabyte) / seconds);
+  {
+    char bytes[MAX_STRUCTURE_LENGTH];
+    char time[MAX_STRUCTURE_LENGTH];
+    char rate[MAX_STRUCTURE_LENGTH];
+
+    log_begin_section("create_files");
+    log_structure(LOG_NOTICE, "written", bytes, "%llu", written);
+    log_structure(LOG_NOTICE, "time_interval", time, "%.2f", seconds);
+    log_structure(LOG_NOTICE, "rate", rate, "%.2f", (double) (written / megabyte) / seconds);
+    log_text(LOG_NOTICE, "%s bytes written in %s seconds (%s MiB/sec).",
+             bytes, time, rate);
+    log_end_section("create_files");
+  }
   else
     log_text(LOG_NOTICE, "No bytes written.");
 
