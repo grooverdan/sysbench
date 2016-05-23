@@ -257,6 +257,8 @@ void log_done(void)
   sb_list_item_t  *pos;
   log_handler_t   *handler;
 
+  print_global_stats();
+
   for (i = 0; i < LOG_MSG_TYPE_MAX; i++)
   {
     SB_LIST_FOR_EACH(pos, handlers + i)
@@ -659,8 +661,6 @@ int xml_handler_init(void)
 
 int xml_handler_done(void)
 {
-  print_global_stats();
-
   xml_end_section("sysbench");
   if (xml_do_close && fclose(xml_out))
   {
@@ -673,8 +673,10 @@ int xml_handler_done(void)
 int xml_handler_process(log_msg_t *msg)
 {
   log_msg_struct_t *struct_msg = (log_msg_struct_t *)msg->data;
+  const char *v = struct_msg->value;
+  v += strspn(v, " \t");
   fprintf(xml_out, "%*s<%s>%s</%s>\n", xml_indentation, "", struct_msg->tag,
-          struct_msg->value, struct_msg->tag);
+          v, struct_msg->tag);
   return 0;
 }
 
@@ -734,8 +736,6 @@ int json_handler_init(void)
 
 int json_handler_done(void)
 {
-  print_global_stats();
-
   fputc('\n', json_out); 
   json_end_section(NULL);
   if (json_do_close && fclose(json_out))
@@ -750,11 +750,13 @@ int json_handler_process(log_msg_t *msg)
 {
   int ret;
   log_msg_struct_t *struct_msg = (log_msg_struct_t *)msg->data;
+  const char *v = struct_msg->value;
+  v+= strspn(v, " \t");
 
   ret = fprintf(json_out, "%s\n%*s\"%s\": \"%s\"", 
                 json_first_element ? "" : ",",
                 json_indentation, "",
-                struct_msg->tag, struct_msg->value);
+                struct_msg->tag, v);
   json_first_element = 0;
   return ret < 0;
 }
@@ -1077,8 +1079,6 @@ int print_global_stats(void)
 
 int oper_handler_done(void)
 {
-  print_global_stats();
-
   free(timers);
   free(timers_copy);
 
