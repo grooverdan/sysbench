@@ -257,7 +257,7 @@ sb_request_t memory_get_request(int thread_id)
 int memory_execute_request(sb_request_t *sb_req, int thread_id)
 {
   sb_mem_request_t    *mem_req = &sb_req->u.mem_request;
-  int                 tmp = 0;
+  volatile int        tmp = 0;
   int                 idx; 
   int                 *buf, *end;
   log_msg_t           msg;
@@ -437,7 +437,7 @@ void * hugetlb_alloc(size_t size)
   if (shmid < 0)
   {
       log_errno(LOG_FATAL,
-                "Failed to allocate %zu bytes from HugeTLB memory.", size);
+                "Failed to allocate %zd bytes from HugeTLB memory.", size);
 
       return NULL;
   }

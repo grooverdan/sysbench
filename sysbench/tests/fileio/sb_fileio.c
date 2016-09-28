@@ -1961,7 +1961,7 @@ int parse_arguments(void)
   file_rw_ratio = sb_get_value_float("file-rw-ratio");
   if (file_rw_ratio < 0)
   {
-    log_text(LOG_FATAL, "Invalid value file file-rw-ratio: %f.", file_rw_ratio);
+    log_text(LOG_FATAL, "Invalid value for --file-rw-ratio: %f.", file_rw_ratio);
     return 1;
   }
 
@@ -1969,6 +1969,12 @@ int parse_arguments(void)
   for (i = 0; i < sb_globals.num_threads; i++)
   {
     per_thread[i].buffer = sb_memalign(file_max_request_size);
+    if (per_thread[i].buffer == NULL)
+    {
+      log_text(LOG_FATAL, "Failed to allocate a memory buffer");
+      return 1;
+    }
+    memset(per_thread[i].buffer, 0, file_max_request_size);
   }
 
   return 0;
