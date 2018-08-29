@@ -61,10 +61,10 @@ AS_IF([test "x$sb_cv_lib_ck" = "xsystem"],
         # autodetects target based on 'uname -m' which doesn't work for
         # cross-compiliation
       i486*|i586*)
-        CK_CONFIGURE_FLAGS="--platform=i586 --profile=i86pc"
+        CK_CONFIGURE_FLAGS="--platform=i586 --profile=x86"
         ;;
       i686*)
-        CK_CONFIGURE_FLAGS="--platform=i686 --profile=i86pc"
+        CK_CONFIGURE_FLAGS="--platform=i686 --profile=x86"
         ;;
       *)
         CK_CONFIGURE_FLAGS="--platform=$target_cpu --profile=$target_cpu"
