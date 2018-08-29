@@ -199,6 +199,8 @@ AC_SUBST([USE_PGSQL])
 AC_CHECK_AIO
 AM_CONDITIONAL(USE_AIO, test x$enable_aio = xyes)
 
+# Cross compulation
+AM_CONDITIONAL(CROSS_COMPILE, test x$cross_compiling = xyes)
 # Checks for header files.
 AC_HEADER_STDC
 

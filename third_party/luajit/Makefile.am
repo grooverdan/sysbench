@@ -14,6 +14,17 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
+if CROSS_COMPILE
+HOST_SYS ?= $$(shell uname -s)
+ifeq (,$$(findstring Darwin,$(HOST_SYS)))
+HOST_CC ?= clang
+else
+HOST_CC ?= gcc
+#else
+else
+HOST_CC ?= $(CC)
+endif
+
 EXTRA_DIST = luajit
 
 all-local: $(builddir)/lib/libluajit-5.1.a
@@ -33,7 +44,7 @@ $(builddir)/lib/libluajit-5.1.a:
 								TARGET_LD="$(CC)" \
 								TARGET_AR="$(AR) rcus" \
 								TARGET_STRIP="$(STRIP)" \
-								HOST_CC=gcc \
+								HOST_CC="$(HOST_CC)" \
                 install
 
 clean-local:
