@@ -15,12 +15,11 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 if CROSS_COMPILE
-HOST_SYS ?= $$(shell uname -s)
-ifeq (,$$(findstring Darwin,$(HOST_SYS)))
+if DARWIN
 HOST_CC ?= clang
 else
 HOST_CC ?= gcc
-#else
+endif
 else
 HOST_CC ?= $(CC)
 endif

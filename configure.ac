@@ -201,6 +201,8 @@ AM_CONDITIONAL(USE_AIO, test x$enable_aio = xyes)
 
 # Cross compulation
 AM_CONDITIONAL(CROSS_COMPILE, test x$cross_compiling = xyes)
+AM_CONDITIONAL(DARWIN, test x$host_os = xdarwin)
+
 # Checks for header files.
 AC_HEADER_STDC
 
