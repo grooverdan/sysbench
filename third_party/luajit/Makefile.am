@@ -38,6 +38,7 @@ $(builddir)/lib/libluajit-5.1.a:
 	$(MAKE) -C tmp/luajit \
                 PREFIX=$(abs_top_builddir)/third_party/luajit \
                 INSTALL_INC=$(abs_top_builddir)/third_party/luajit/inc \
+								Q= \
 								STATIC_CC="$(CC)" \
 								DYNAMIC_CC="$(CC) -fPIC" \
 								TARGET_LD="$(CC)" \
