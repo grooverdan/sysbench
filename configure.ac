@@ -75,7 +75,10 @@ CPPFLAGS="-D_GNU_SOURCE ${CPPFLAGS}"
 
 # Mac OS X requires _DARWIN_C_SOURCE for valloc(3) to be visible
 case "${host_cpu}-${host_os}" in
-	*-darwin*) CPPFLAGS="-D_DARWIN_C_SOURCE ${CPPFLAGS}";;
+	*-darwin*) CPPFLAGS="-D_DARWIN_C_SOURCE ${CPPFLAGS}"
+AM_CONDITIONAL(DARWIN, test x$host_os = xdarwin) ;;
+        *)
+AM_CONDITIONAL(DARWIN, false) ;;
 esac
 
 # Build optimized or debug version ?
@@ -201,7 +204,6 @@ AM_CONDITIONAL(USE_AIO, test x$enable_aio = xyes)
 
 # Cross compulation
 AM_CONDITIONAL(CROSS_COMPILE, test x$cross_compiling = xyes)
-AM_CONDITIONAL(DARWIN, test x$host_os = xdarwin)
 
 # Checks for header files.
 AC_HEADER_STDC
