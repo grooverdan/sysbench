@@ -45,6 +45,9 @@ $(builddir)/lib/libluajit-5.1.a:
 								TARGET_AR="$(AR) rcus" \
 								TARGET_STRIP="$(STRIP)" \
 								HOST_CC="$(HOST_CC)" \
+if DARWIN
+                TARGET_SYS="Darwin" \
+endif
                 install
 
 clean-local:
