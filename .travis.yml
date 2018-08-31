@@ -66,8 +66,7 @@ matrix:
           sudo apt-get -y install \
                    libmysqlclient-dev:$DEBARCH \
                    libpq-dev:$DEBARCH \
-                   libaio-dev:$DEBARCH \
-                   libc-dev:$DEBARCH
+                   libaio-dev:$DEBARCH
 
   exclude:
     - env: OS=el DIST=6
