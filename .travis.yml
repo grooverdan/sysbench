@@ -57,7 +57,7 @@ matrix:
           - gcc-4.8-aarch64-linux-gnu-base
       sudo: required
       env:
-        - DEBARCH=aarch64
+        - DEBARCH=arm64
           TARGET=cross
       before_install:
         - |
