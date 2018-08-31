@@ -21,6 +21,9 @@ else
 HOST_CC ?= gcc
 endif
 else
+if DARWIN
+TARGET_SYS=Darwin
+endif
 HOST_CC ?= $(CC)
 endif
 
@@ -45,9 +48,7 @@ $(builddir)/lib/libluajit-5.1.a:
 								TARGET_AR="$(AR) rcus" \
 								TARGET_STRIP="$(STRIP)" \
 								HOST_CC="$(HOST_CC)" \
-if DARWIN
-                TARGET_SYS="Darwin" \
-endif
+                TARGET_SYS="$(TARGET_SYS)" \
                 install
 
 clean-local:
