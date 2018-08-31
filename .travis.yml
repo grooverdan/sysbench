@@ -49,6 +49,26 @@ env:
       - OS=debian DIST=sid ARCH=i386
 
 matrix:
+  include:
+    - name: 'cross build to aarch64'
+      addons:
+        apt:
+          packages:
+          - gcc-4.8-aarch64-linux-gnu-base
+      sudo: required
+      env:
+        - DEBARCH=aarch64
+          TARGET=cross
+      before_install:
+        - |
+          sudo add-apt-repository "deb [arch=$DEBARCH] http://ports.ubuntu.com/ubuntu-ports trusty main universe"
+          sudo apt-get -y update
+          sudo apt-get -y install \
+                   libmysqlclient-dev:$DEBARCH \
+                   libpq-dev:$DEBARCH \
+                   libaio-dev:$DEBARCH \
+                   libc-dev:$DEBARCH
+
   exclude:
     - env: OS=el DIST=6
       compiler: clang
@@ -189,6 +209,12 @@ script:
   - >
     if [ -n "$TARGET" ]; then
       case "$TARGET" in
+      cross)
+        export CC=/usr/bin/${DEBARCH}-linux-gnu-gcc-4.8
+        ./autogen.sh && ./configure --with-mysql --with-pgsql --host=aarch64-unknown-linux-gnu
+        cat config.log
+        make
+        ;;
       test)
         ./autogen.sh && ./configure --with-mysql --with-pgsql
         cat config.log
