@@ -248,7 +248,7 @@ CREATE TABLE sbtest%d(
 end
 
 local t = sysbench.sql.type
-local stmt_defs = {
+stmt_defs = {
    point_selects = {
       "SELECT c FROM sbtest%u WHERE id=?",
       t.INT},
