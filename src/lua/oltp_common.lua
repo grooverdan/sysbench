@@ -248,35 +248,15 @@ CREATE TABLE sbtest%d(
 end
 
 local t = sysbench.sql.type
-local stmt_defs = {
+stmt_defs = {
    point_selects = {
       "SELECT c FROM sbtest%u WHERE id=?",
       t.INT},
-   simple_ranges = {
-      "SELECT c FROM sbtest%u WHERE id BETWEEN ? AND ?",
-      t.INT, t.INT},
-   sum_ranges = {
-      "SELECT SUM(k) FROM sbtest%u WHERE id BETWEEN ? AND ?",
-       t.INT, t.INT},
-   order_ranges = {
-      "SELECT c FROM sbtest%u WHERE id BETWEEN ? AND ? ORDER BY c",
-       t.INT, t.INT},
-   distinct_ranges = {
-      "SELECT DISTINCT c FROM sbtest%u WHERE id BETWEEN ? AND ? ORDER BY c",
-      t.INT, t.INT},
-   index_updates = {
-      "UPDATE sbtest%u SET k=k+1 WHERE id=?",
-      t.INT},
-   non_index_updates = {
-      "UPDATE sbtest%u SET c=? WHERE id=?",
-      {t.CHAR, 120}, t.INT},
-   deletes = {
-      "DELETE FROM sbtest%u WHERE id=?",
-      t.INT},
-   inserts = {
-      "INSERT INTO sbtest%u (id, k, c, pad) VALUES (?, ?, ?, ?)",
-      t.INT, t.INT, {t.CHAR, 120}, {t.CHAR, 60}},
 }
+
+local function get_table_num()
+   return sysbench.tid % sysbench.opt.threads % sysbench.opt.tables + 1
+end
 
 function prepare_begin()
    stmt.begin = con:prepare("BEGIN")
@@ -287,7 +267,8 @@ function prepare_commit()
 end
 
 function prepare_for_each_table(key)
-   for t = 1, sysbench.opt.tables do
+   -- ugly hack for a single value loop
+   for t = get_table_num(), get_table_num() do
       stmt[t][key] = con:prepare(string.format(stmt_defs[key][1], t))
 
       local nparam = #stmt_defs[key] - 1
@@ -398,10 +379,6 @@ function cleanup()
       print(string.format("Dropping table 'sbtest%d'...", i))
       con:query("DROP TABLE IF EXISTS sbtest" .. i )
    end
-end
-
-local function get_table_num()
-   return sysbench.rand.uniform(1, sysbench.opt.tables)
 end
 
 local function get_id()
